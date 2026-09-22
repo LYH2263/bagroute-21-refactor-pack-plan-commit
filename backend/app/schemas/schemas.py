@@ -51,6 +51,32 @@ class PackRequest(BaseModel):
     route_id: int
 
 
+class PackPlanItemOut(BaseModel):
+    stop_id: int
+    stop_name: str
+    weight_kg: float
+    volume_l: float
+
+
+class PackPlanBagOut(BaseModel):
+    bag_index: int
+    weight_kg: float
+    volume_l: float
+    items: list[PackPlanItemOut] = []
+
+
+class PackPlanRejectOut(BaseModel):
+    stop_id: int
+    stop_name: str
+    reason: str
+
+
+class PackPlanOut(BaseModel):
+    route_id: int
+    bags: list[PackPlanBagOut]
+    rejects: list[PackPlanRejectOut]
+
+
 class WeightOut(BaseModel):
     bag_id: int
     bag_index: int
