@@ -17,6 +17,8 @@ docker compose up --build
 
 健康检查：`GET http://localhost:9300/api/health`
 
+装袋为两段式：`POST /api/pack/plan` 试算（只返回拟开袋与拟拒收，不写库，供核对）；`POST /api/pack` 一次装袋（内部先试算再提交，提交失败整体回滚）。
+
 ## 页面
 
 - `/routes` — 路线

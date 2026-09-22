@@ -7,13 +7,18 @@ from app.models.models import BagItem, DeliveryRoute, PackBag, RejectRecord, Sub
 from app.schemas.schemas import (
     BagItemOut,
     BagOut,
+    PackPlanOut,
     PackRequest,
     RejectOut,
     RouteOut,
     StopOut,
     WeightOut,
 )
-from app.services.pack_engine import StopItem, pack_route
+from app.services.pack_service import (
+    RouteNotFoundError,
+    build_pack_plan,
+    commit_pack_plan,
+)
 
 api_router = APIRouter()
 
@@ -36,60 +41,23 @@ def stops(route_id: int | None = None, db: Session = Depends(get_db)):
     return db.scalars(q).all()
 
 
+@api_router.post("/pack/plan", response_model=PackPlanOut)
+def pack_plan(body: PackRequest, db: Session = Depends(get_db)):
+    """试算：返回拟开袋与拟拒收，仅供核对，不写库。"""
+    try:
+        return build_pack_plan(db, body.route_id)
+    except RouteNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+
+
 @api_router.post("/pack", response_model=list[BagOut])
 def pack(body: PackRequest, db: Session = Depends(get_db)):
-    route = db.get(DeliveryRoute, body.route_id)
-    if not route:
-        raise HTTPException(404, "路线不存在")
-    # clear previous pack for route
-    old_bags = db.scalars(select(PackBag).where(PackBag.route_id == route.id)).all()
-    for b in old_bags:
-        for it in list(b.items):
-            db.delete(it)
-        db.delete(b)
-    old_rej = db.scalars(select(RejectRecord).where(RejectRecord.route_id == route.id)).all()
-    for r in old_rej:
-        db.delete(r)
-    db.flush()
-
-    stops = db.scalars(
-        select(SubscriberStop).where(SubscriberStop.route_id == route.id).order_by(SubscriberStop.seq)
-    ).all()
-    items = [
-        StopItem(s.id, s.seq, s.weight_kg, s.volume_l, s.name) for s in stops
-    ]
-    result = pack_route(items, route.max_weight_kg, route.max_volume_l)
-    out_bags: list[PackBag] = []
-    for bag in result.bags:
-        row = PackBag(
-            route_id=route.id,
-            bag_index=bag.bag_index,
-            weight_kg=round(bag.weight_kg, 3),
-            volume_l=round(bag.volume_l, 3),
-        )
-        db.add(row)
-        db.flush()
-        for it in bag.items:
-            db.add(
-                BagItem(
-                    bag_id=row.id,
-                    stop_id=it.stop_id,
-                    stop_name=it.label,
-                    weight_kg=it.weight_kg,
-                    volume_l=it.volume_l,
-                )
-            )
-        out_bags.append(row)
-    for stop, reason in result.rejects:
-        db.add(
-            RejectRecord(
-                route_id=route.id,
-                stop_id=stop.stop_id,
-                stop_name=stop.label,
-                reason=reason,
-            )
-        )
-    db.commit()
+    """一次装袋入口：内部先试算再提交，提交失败整体回滚。"""
+    try:
+        plan = build_pack_plan(db, body.route_id)
+    except RouteNotFoundError as e:
+        raise HTTPException(404, str(e)) from e
+    out_bags = commit_pack_plan(db, plan)
     return [
         BagOut(
             id=b.id,

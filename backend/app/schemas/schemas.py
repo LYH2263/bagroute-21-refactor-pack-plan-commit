@@ -51,6 +51,34 @@ class PackRequest(BaseModel):
     route_id: int
 
 
+class PlannedItemOut(BaseModel):
+    stop_id: int
+    stop_name: str
+    weight_kg: float
+    volume_l: float
+
+
+class PlannedBagOut(BaseModel):
+    bag_index: int
+    weight_kg: float
+    volume_l: float
+    items: list[PlannedItemOut] = []
+
+
+class PlannedRejectOut(BaseModel):
+    stop_id: int
+    stop_name: str
+    reason: str
+
+
+class PackPlanOut(BaseModel):
+    """试算结果：拟开袋与拟拒收，仅供核对，未写库。"""
+
+    route_id: int
+    bags: list[PlannedBagOut] = []
+    rejects: list[PlannedRejectOut] = []
+
+
 class WeightOut(BaseModel):
     bag_id: int
     bag_index: int
